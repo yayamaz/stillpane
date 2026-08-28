@@ -7,7 +7,7 @@
       "source": {
         "source": "github",
         "repo": "yayamaz/stillpane",
-        "sha": "50393d47f209912ca7102e61e329df3694db7f69"
+        "sha": "39438db3d1135497c47ad8138a3fcd69f3050ff0"
       },
       "description": "Auto-attach stillpane window captures to your next Claude Code message"
     }
