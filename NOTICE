@@ -1,0 +1,10 @@
+stillpane
+Copyright 2026 Yanis Saheb
+
+The following files are not covered by the Apache License 2.0:
+
+  assets/capture.aiff - the capture sound. Trimmed and re-encoded from
+  "UI Sounds Pack 2 Sound (2)", obtained from Pixabay and used under the
+  Pixabay Content License (https://pixabay.com/service/license-summary/).
+  It may be used as part of this software. It may not be extracted and
+  redistributed as a standalone audio file.

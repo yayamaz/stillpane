@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # macos-15: the earliest runner whose default toolchain is Swift 6,
+    # which the package manifest requires.
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Lint
+        # Wordmark.swift is generated and excluded; everything else must be
+        # formatter-clean per the repo's .swift-format.
+        run: |
+          find Sources Tests -name '*.swift' ! -name 'Wordmark.swift' -print0 \
+            | xargs -0 swift format lint --strict --parallel Package.swift
+      - name: Test
+        run: swift test
+      - name: Hook tests
+        run: bash Tests/HookTests.sh
+      - name: Release build
+        run: swift build -c release

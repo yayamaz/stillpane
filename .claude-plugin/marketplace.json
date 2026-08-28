@@ -1,0 +1,15 @@
+{
+  "name": "stillpane",
+  "owner": { "name": "yayamaz" },
+  "plugins": [
+    {
+      "name": "stillpane",
+      "source": {
+        "source": "github",
+        "repo": "yayamaz/stillpane",
+        "sha": "50393d47f209912ca7102e61e329df3694db7f69"
+      },
+      "description": "Auto-attach stillpane window captures to your next Claude Code message"
+    }
+  ]
+}
