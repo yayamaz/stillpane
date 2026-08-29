@@ -411,6 +411,11 @@ private struct ClaudeCodeStep: View {
                         ProgressView().controlSize(.small).offset(x: 30)
                     }
                 }
+                // The one-press chain sets `claudePath` before its last leg,
+                // which lands the view here; the narration follows it.
+                if let status = state.cliSetupStatus {
+                    WaitingLabel(text: status)
+                }
             }
 
             if let message = state.claudeMessage {
@@ -434,10 +439,18 @@ private struct ClaudeCodeStep: View {
             return "stillpane attaches captures through a Claude Code plugin."
         }
         if state.claudePath == nil {
+            if state.claudeAppPresent {
+                return """
+                    stillpane attaches captures through a Claude Code plugin, and \
+                    this installs it for you. Your Claude app includes Claude Code; \
+                    the install first adds its official command line tool, which \
+                    stillpane uses to set up the plugin.
+                    """
+            }
             return """
-                stillpane attaches captures through a Claude Code plugin, but \
-                Claude Code does not seem to be installed on this Mac. Install it \
-                first, then come back - setup continues right here.
+                stillpane attaches captures through a Claude Code plugin, but the \
+                claude command line tool does not seem to be installed on this Mac. \
+                Install Claude Code first, then come back - setup continues right here.
                 """
         }
         return "stillpane attaches captures through a Claude Code plugin, and this installs it for you."
