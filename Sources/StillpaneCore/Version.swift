@@ -1,5 +1,5 @@
 public enum StillpaneVersion {
-    public static let version = "1.0.0"
+    public static let version = "1.1.0"
 
     /// The plugin version this app was released alongside; release.sh
     /// refuses to cut a release where this and .claude-plugin/plugin.json
