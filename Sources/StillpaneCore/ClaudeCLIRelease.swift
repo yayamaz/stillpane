@@ -41,8 +41,19 @@ public enum ClaudeCLIRelease {
     private struct Manifest: Decodable {
         struct Platform: Decodable {
             let checksum: String
+            let size: Int64?
         }
         let platforms: [String: Platform]
+    }
+
+    /// The manifest's byte size for one platform's binary, or nil when the
+    /// manifest does not parse, does not know the platform, or reports no
+    /// positive size. Download progress divides by this, so zero never passes.
+    public static func expectedBytes(fromManifest data: Data, platform: String) -> Int64? {
+        guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+            let size = manifest.platforms[platform]?.size, size > 0
+        else { return nil }
+        return size
     }
 
     /// The manifest's SHA-256 for one platform, or nil when the manifest does

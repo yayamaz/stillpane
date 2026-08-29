@@ -38,11 +38,48 @@ enum ClaudeCLIInstaller {
 
     enum Outcome: Sendable {
         case installed(URL)
+        /// The user cancelled the download; not an error, nothing to report.
+        case cancelled
         /// A one-line failure fit for the setup step.
         case failed(String)
     }
 
-    static func install() -> Outcome {
+    /// Lets the UI cancel the download leg, the only stage long enough to
+    /// deserve it. @unchecked Sendable: every access goes through the lock.
+    final class InstallHandle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var task: URLSessionDownloadTask?
+        private var cancelled = false
+
+        func cancel() {
+            lock.lock()
+            cancelled = true
+            let task = task
+            lock.unlock()
+            task?.cancel()
+        }
+
+        fileprivate func attach(_ task: URLSessionDownloadTask) {
+            lock.lock()
+            let alreadyCancelled = cancelled
+            self.task = task
+            lock.unlock()
+            if alreadyCancelled { task.cancel() }
+        }
+
+        fileprivate var isCancelled: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancelled
+        }
+    }
+
+    /// `progress` reports the download leg only, as a 0...1 fraction of the
+    /// manifest's published size, at most every whole percent; the other
+    /// stages have no truthful signal and report nothing.
+    static func install(
+        handle: InstallHandle, progress: @escaping @Sendable (Double) -> Void
+    ) -> Outcome {
         guard let rawVersion = fetchString(ClaudeCLIRelease.latestVersionURL),
             let version = ClaudeCLIRelease.version(fromLatest: rawVersion)
         else { return .failed("Could not reach claude.ai's download service.") }
@@ -55,7 +92,14 @@ enum ClaudeCLIInstaller {
         let binary = FileManager.default.temporaryDirectory
             .appendingPathComponent("stillpane-claude-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: binary) }
-        guard download(ClaudeCLIRelease.binaryURL(version: version, platform: platform), to: binary)
+        let downloaded = download(
+            ClaudeCLIRelease.binaryURL(version: version, platform: platform), to: binary,
+            handle: handle,
+            expectedBytes: ClaudeCLIRelease.expectedBytes(fromManifest: manifest, platform: platform),
+            progress: progress
+        )
+        if handle.isCancelled { return .cancelled }
+        guard downloaded
         else { return .failed("The download of Claude Code \(version) failed.") }
         guard FileChecksum.sha256(of: binary) == checksum else {
             return .failed("The downloaded tool did not match its published checksum.")
@@ -123,18 +167,37 @@ enum ClaudeCLIInstaller {
     }
 
     /// Downloads straight to a file so the binary never has to fit in memory.
-    private static func download(_ url: URL, to destination: URL) -> Bool {
+    /// Progress is received bytes over the manifest's size (never the
+    /// response's own headers), reported on whole-percent steps so the
+    /// observer is not flooded; no expected size means no reports.
+    private static func download(
+        _ url: URL, to destination: URL, handle: InstallHandle,
+        expectedBytes: Int64?, progress: @escaping @Sendable (Double) -> Void
+    ) -> Bool {
         let handoff = Handoff<Bool>(false)
         let done = DispatchSemaphore(value: 0)
-        session.downloadTask(with: url) { location, response, _ in
+        let task = session.downloadTask(with: url) { location, response, _ in
             if let location, let http = response as? HTTPURLResponse, http.statusCode == 200 {
                 try? FileManager.default.removeItem(at: destination)
                 handoff.value =
                     (try? FileManager.default.moveItem(at: location, to: destination)) != nil
             }
             done.signal()
-        }.resume()
+        }
+        var observation: NSKeyValueObservation?
+        if let expectedBytes {
+            let reported = Handoff<Double>(0)
+            observation = task.observe(\.countOfBytesReceived) { task, _ in
+                let fraction = min(Double(task.countOfBytesReceived) / Double(expectedBytes), 1)
+                guard fraction - reported.value >= 0.01 else { return }
+                reported.value = fraction
+                progress(fraction)
+            }
+        }
+        handle.attach(task)
+        task.resume()
         done.wait()
+        observation?.invalidate()
         return handoff.value
     }
 }

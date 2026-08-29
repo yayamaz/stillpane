@@ -61,6 +61,25 @@ struct ClaudeCLIReleaseTests {
         #expect(ClaudeCLIRelease.checksum(fromManifest: Data("not json".utf8), platform: "darwin-arm64") == nil)
     }
 
+    @Test func readsExpectedBytesForPlatform() {
+        let data = manifest(platform: "darwin-arm64", checksum: Self.checksum)
+        #expect(ClaudeCLIRelease.expectedBytes(fromManifest: data, platform: "darwin-arm64") == 123_456)
+    }
+
+    @Test func missingPlatformYieldsNilBytes() {
+        let data = manifest(platform: "darwin-arm64", checksum: Self.checksum)
+        #expect(ClaudeCLIRelease.expectedBytes(fromManifest: data, platform: "darwin-x64") == nil)
+    }
+
+    @Test func nonPositiveOrAbsentSizeYieldsNilBytes() {
+        let zero = Data(
+            #"{"platforms": {"darwin-arm64": {"checksum": "\#(Self.checksum)", "size": 0}}}"#.utf8)
+        #expect(ClaudeCLIRelease.expectedBytes(fromManifest: zero, platform: "darwin-arm64") == nil)
+        let absent = Data(
+            #"{"platforms": {"darwin-arm64": {"checksum": "\#(Self.checksum)"}}}"#.utf8)
+        #expect(ClaudeCLIRelease.expectedBytes(fromManifest: absent, platform: "darwin-arm64") == nil)
+    }
+
     // MARK: - URLs
 
     @Test func urlsFollowTheReleaseLayout() {

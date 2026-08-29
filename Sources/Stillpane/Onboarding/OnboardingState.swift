@@ -52,6 +52,11 @@ final class OnboardingState: ObservableObject {
     /// True while the step waits for the OS's Command Line Tools install,
     /// which ends with no notification; the tick polls for it.
     @Published private(set) var awaitingDeveloperTools = false
+    /// The download leg's 0...1 fraction, nil outside it. Only the download
+    /// has a truthful fraction (received bytes over the manifest's size), so
+    /// only the download gets a bar; the other legs keep their plain label.
+    @Published private(set) var cliDownloadProgress: Double?
+    private var installHandle: ClaudeCLIInstaller.InstallHandle?
 
     /// The status board: the window's root once setup is finished, listing
     /// every link in the chain and letting a broken one be opened at the step
@@ -418,14 +423,28 @@ final class OnboardingState: ObservableObject {
     private func installCLIAndPlugin() {
         awaitingDeveloperTools = false
         cliSetupStatus = "Adding Claude Code's command line tool…"
+        let handle = ClaudeCLIInstaller.InstallHandle()
+        installHandle = handle
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = ClaudeCLIInstaller.install()
+            let result = ClaudeCLIInstaller.install(handle: handle) { fraction in
+                Task { @MainActor in
+                    // Only the live chain moves the bar; a report queued
+                    // behind the finish would otherwise revive it.
+                    guard self.installHandle === handle else { return }
+                    self.cliDownloadProgress = fraction
+                }
+            }
             Task { @MainActor in
+                self.installHandle = nil
+                self.cliDownloadProgress = nil
                 switch result {
                 case .installed(let claude):
                     self.claudePath = claude
                     self.cliSetupStatus = "Installing the stillpane plugin…"
                     self.installPlugin(with: claude)
+                case .cancelled:
+                    self.isWorking = false
+                    self.cliSetupStatus = nil
                 case .failed(let message):
                     self.isWorking = false
                     self.cliSetupStatus = nil
@@ -434,6 +453,12 @@ final class OnboardingState: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Cancels the download leg; the chain answers with `.cancelled` and the
+    /// step returns to idle with nothing to report.
+    func cancelCLIDownload() {
+        installHandle?.cancel()
     }
 
     /// The shared tail of both install paths. Expects `isWorking` to be set

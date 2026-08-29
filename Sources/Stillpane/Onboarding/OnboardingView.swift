@@ -362,7 +362,12 @@ private struct ClaudeCodeStep: View {
                         }
                     }
                     if let status = state.cliSetupStatus {
-                        WaitingLabel(text: status)
+                        if let fraction = state.cliDownloadProgress {
+                            DownloadMeter(text: status, fraction: fraction)
+                            QuietLink("Cancel") { state.cancelCLIDownload() }
+                        } else {
+                            WaitingLabel(text: status)
+                        }
                     }
                     if state.awaitingDeveloperTools {
                         QuietLink("Stop waiting") { state.cancelCLISetup() }
@@ -623,6 +628,37 @@ private struct WaitingLabel: View {
             ProgressView().controlSize(.small)
             Text(text).font(VoidTheme.note).foregroundStyle(VoidTheme.muted)
         }
+    }
+}
+
+/// The download leg's determinate row: the waiting label's seat, a mono
+/// percent at the line's end, and a hairline underneath. It replaces the
+/// spinner - two progress indicators for one wait is noise.
+private struct DownloadMeter: View {
+    let text: String
+    let fraction: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(text).font(VoidTheme.note).foregroundStyle(VoidTheme.muted)
+                Spacer(minLength: 16)
+                Text("\(Int(fraction * 100))%")
+                    .font(VoidTheme.mono)
+                    .monospacedDigit()
+                    .foregroundStyle(VoidTheme.faint)
+            }
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule().fill(Color.white.opacity(0.85))
+                        .frame(width: max(geometry.size.width * fraction, 2))
+                }
+            }
+            .frame(height: 2)
+        }
+        .frame(maxWidth: .infinity)
+        .animation(.linear(duration: 0.2), value: fraction)
     }
 }
 
