@@ -74,11 +74,17 @@ enum ClaudeCLIInstaller {
         }
     }
 
-    /// `progress` reports the download leg only, as a 0...1 fraction of the
-    /// manifest's published size, at most every whole percent; the other
-    /// stages have no truthful signal and report nothing.
+    /// What the installer tells the UI while it runs. Only the download has a
+    /// truthful fraction, as received bytes over the manifest's published
+    /// size at most every whole percent; its end is reported so the meter can
+    /// come down while the remaining stages still hold the working state.
+    enum Event: Sendable {
+        case downloading(Double)
+        case downloadEnded
+    }
+
     static func install(
-        handle: InstallHandle, progress: @escaping @Sendable (Double) -> Void
+        handle: InstallHandle, report: @escaping @Sendable (Event) -> Void
     ) -> Outcome {
         guard let rawVersion = fetchString(ClaudeCLIRelease.latestVersionURL),
             let version = ClaudeCLIRelease.version(fromLatest: rawVersion)
@@ -96,11 +102,12 @@ enum ClaudeCLIInstaller {
             ClaudeCLIRelease.binaryURL(version: version, platform: platform), to: binary,
             handle: handle,
             expectedBytes: ClaudeCLIRelease.expectedBytes(fromManifest: manifest, platform: platform),
-            progress: progress
+            progress: { report(.downloading($0)) }
         )
         if handle.isCancelled { return .cancelled }
         guard downloaded
         else { return .failed("The download of Claude Code \(version) failed.") }
+        report(.downloadEnded)
         guard FileChecksum.sha256(of: binary) == checksum else {
             return .failed("The downloaded tool did not match its published checksum.")
         }
@@ -112,6 +119,10 @@ enum ClaudeCLIInstaller {
         } catch {
             return .failed("Could not mark the downloaded tool executable.")
         }
+        // A cancel clicked while the checksum ran is still a cancel; past
+        // this point the chain finishes, because killing Anthropic's
+        // installer mid-write is worse than completing it.
+        if handle.isCancelled { return .cancelled }
         let install = ClaudeCLI.run(binary, ["install"], timeout: installTimeout)
         guard install.succeeded else {
             return .failed("Claude Code's installer did not finish: \(install.failureMessage)")
@@ -134,9 +145,11 @@ enum ClaudeCLIInstaller {
 
     // MARK: - Blocking network helpers
 
-    /// One value handed from a URLSession callback to the blocked caller.
-    /// @unchecked Sendable: the semaphore orders the callback's write before
-    /// the caller's read, and nothing else touches the box.
+    /// One value handed between network callbacks and their consumer.
+    /// @unchecked Sendable: each call site establishes its own ordering - the
+    /// fetch and download results are written once before the semaphore
+    /// releases their reader, and the progress throttle's read-modify-write
+    /// rides on URLSession delivering one task's KVO events serially.
     private final class Handoff<Value>: @unchecked Sendable {
         var value: Value
         init(_ value: Value) { self.value = value }

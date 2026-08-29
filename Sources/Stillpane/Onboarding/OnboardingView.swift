@@ -353,13 +353,10 @@ private struct ClaudeCodeStep: View {
                 WaitingLabel(text: "Looking for the claude command")
             } else if state.claudePath == nil {
                 if state.claudeAppPresent {
+                    // No spinner on the keycap here: this path always has a
+                    // status row below carrying its own indicator.
                     SpacebarButton(title: "Install Plugin", isEnabled: !state.isWorking) {
                         state.installClaudeCode()
-                    }
-                    .overlay(alignment: .trailing) {
-                        if state.isWorking {
-                            ProgressView().controlSize(.small).offset(x: 30)
-                        }
                     }
                     if let status = state.cliSetupStatus {
                         if let fraction = state.cliDownloadProgress {
@@ -412,7 +409,9 @@ private struct ClaudeCodeStep: View {
                     state.connectClaudeCode()
                 }
                 .overlay(alignment: .trailing) {
-                    if state.isWorking {
+                    // The chain's narration carries its own indicator; the
+                    // keycap spinner is for the plain path, which has none.
+                    if state.isWorking, state.cliSetupStatus == nil {
                         ProgressView().controlSize(.small).offset(x: 30)
                     }
                 }

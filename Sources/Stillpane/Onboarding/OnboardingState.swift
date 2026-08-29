@@ -426,12 +426,19 @@ final class OnboardingState: ObservableObject {
         let handle = ClaudeCLIInstaller.InstallHandle()
         installHandle = handle
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = ClaudeCLIInstaller.install(handle: handle) { fraction in
+            let result = ClaudeCLIInstaller.install(handle: handle) { event in
                 Task { @MainActor in
                     // Only the live chain moves the bar; a report queued
                     // behind the finish would otherwise revive it.
                     guard self.installHandle === handle else { return }
-                    self.cliDownloadProgress = fraction
+                    switch event {
+                    case .downloading(let fraction):
+                        self.cliDownloadProgress = fraction
+                    case .downloadEnded:
+                        // The meter and its Cancel leave with the leg; the
+                        // stages after it show the plain waiting label.
+                        self.cliDownloadProgress = nil
+                    }
                 }
             }
             Task { @MainActor in
