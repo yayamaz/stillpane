@@ -41,7 +41,7 @@ There is no wrong thread to climb back out of.
 <details open>
 <summary><strong>From Claude Code</strong></summary>
 
-Two commands in any session:
+Two commands in any terminal session:
 
     /plugin marketplace add yayamaz/stillpane
     /plugin install stillpane@stillpane
@@ -83,7 +83,7 @@ Open stillpane and a setup assistant walks the whole thing, one step at a time:
 
 1. **Accessibility** - allows stillpane to capture the window's text.
 2. **Screen Recording** - allows stillpane to take the screenshot of the captured window. Without it, captures only record the window text.
-3. **Claude Code** - the assistant finds your `claude` binary and installs the plugin for you. The plugin approves its own capture reads (scoped to `~/.claude/stillpane/`, nothing else), so Claude never asks for permission to read a capture and nothing is written to your settings.
+3. **Claude Code** - the assistant finds your `claude` binary and installs the plugin for you; on a Mac with the Claude app but no `claude` command, the same press first installs Claude Code's command line tool, verified against Anthropic's published checksum. The plugin approves its own capture reads (scoped to `~/.claude/stillpane/`, nothing else), so Claude never asks for permission to read a capture and nothing is written to your settings.
 4. **First capture** - press left Option and right Option in any app; the assistant notices and finishes.
 
 After that, the menu bar icon holds everything else: checking your setup, pausing captures, switching to text-only captures, uninstalling.
@@ -149,7 +149,8 @@ A capture carries the window's whole accessibility tree, so it can include text 
 Everything a capture contains lives in `~/.claude/stillpane/` - a folder you can open from the menu and delete at any time - and is pruned automatically after 24 hours.
 
 The only other network activity: stillpane asks stillpane.dev once a day whether a newer version exists so the menu can point you at a newer release - a request carrying no identifiers, off-switchable with the menu's "Check for Updates Automatically" toggle.
-It carries nothing about you or your captures, and the app never downloads or installs anything itself.
+It carries nothing about you or your captures, and the app never updates itself - installing a newer release stays your action.
+The one thing setup can download is Claude Code's command line tool: only on a Mac that has none, only when you press Install Plugin, and only after the download matches Anthropic's published checksum.
 
 The Claude Code plugin updates only when you run `claude plugin update stillpane@stillpane` yourself; each plugin release is pinned to an exact commit, and Check Setup tells you when your installed plugin is older than the app expects.
 
