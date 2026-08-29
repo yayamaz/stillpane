@@ -447,9 +447,7 @@ private struct ClaudeCodeStep: View {
             if state.claudeAppPresent {
                 return """
                     stillpane attaches captures through a Claude Code plugin, and \
-                    this installs it for you. Your Claude app includes Claude Code; \
-                    the install first adds its official command line tool, which \
-                    stillpane uses to set up the plugin.
+                    this installs it for you, along with the claude command line tool.
                     """
             }
             return """
