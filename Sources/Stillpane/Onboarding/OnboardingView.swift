@@ -339,7 +339,7 @@ private struct ClaudeCodeStep: View {
     @ObservedObject var state: OnboardingState
 
     private var isLocating: Bool {
-        state.isWorking && state.claudePath == nil
+        state.isWorking && state.claudePath == nil && state.cliSetupStatus == nil
     }
 
     var body: some View {
@@ -352,29 +352,52 @@ private struct ClaudeCodeStep: View {
             if isLocating {
                 WaitingLabel(text: "Looking for the claude command")
             } else if state.claudePath == nil {
-                HStack(spacing: 10) {
-                    Button("Install Claude Code") { state.openClaudeCodeSite() }
-                        .buttonStyle(.voidProminent)
-                    Button("Check Again") { state.retryClaudeDetection() }
+                if state.claudeAppPresent {
+                    SpacebarButton(title: "Install Plugin", isEnabled: !state.isWorking) {
+                        state.installClaudeCode()
+                    }
+                    .overlay(alignment: .trailing) {
+                        if state.isWorking {
+                            ProgressView().controlSize(.small).offset(x: 30)
+                        }
+                    }
+                    if let status = state.cliSetupStatus {
+                        WaitingLabel(text: status)
+                    }
+                    if state.awaitingDeveloperTools {
+                        QuietLink("Stop waiting") { state.cancelCLISetup() }
+                    }
+                    if !state.isWorking {
+                        QuietLink("Prefer the Terminal? Copy the install command") {
+                            state.copyCLIInstallCommand()
+                        }
+                        QuietLink("Check Again") { state.retryClaudeDetection() }
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        Button("Install Claude Code") { state.openClaudeCodeSite() }
+                            .buttonStyle(.voidProminent)
+                        Button("Check Again") { state.retryClaudeDetection() }
+                            .buttonStyle(.voidQuiet)
+                    }
+                    StepNote(
+                        """
+                        Already using Claude Code? The claude command is just not on \
+                        this Mac's usual paths - run these two lines in a Claude \
+                        Code terminal session instead.
+                        """)
+                    Text(ClaudeCLI.installCommands)
+                        .font(VoidTheme.mono)
+                        .textSelection(.enabled)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.white.opacity(0.06))
+                        )
+                    Button("Copy Commands") { state.copyInstallCommands() }
                         .buttonStyle(.voidQuiet)
                 }
-                StepNote(
-                    """
-                    Already using Claude Code? The claude command is just not on \
-                    this Mac's usual paths - run these two lines in any Claude \
-                    Code session instead.
-                    """)
-                Text(ClaudeCLI.installCommands)
-                    .font(VoidTheme.mono)
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                    )
-                Button("Copy Commands") { state.copyInstallCommands() }
-                    .buttonStyle(.voidQuiet)
             } else if !state.pluginInstalled {
                 // Once installed the button disappears entirely: a greyed
                 // "Installed" control is a dead weight over the state line.

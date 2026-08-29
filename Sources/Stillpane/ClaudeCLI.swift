@@ -125,12 +125,15 @@ enum ClaudeCLI {
         return run(claude, ["plugin", "install", pluginId])
     }
 
-    static func run(_ executable: URL, _ arguments: [String]) -> Output {
-        run(executable, arguments, environment: environment(for: executable))
+    static func run(
+        _ executable: URL, _ arguments: [String], timeout: TimeInterval = ClaudeCLI.timeout
+    ) -> Output {
+        run(executable, arguments, environment: environment(for: executable), timeout: timeout)
     }
 
     private static func run(
-        _ executable: URL, _ arguments: [String], environment: [String: String]
+        _ executable: URL, _ arguments: [String], environment: [String: String],
+        timeout: TimeInterval = ClaudeCLI.timeout
     ) -> Output {
         let process = Process()
         process.executableURL = executable

@@ -41,6 +41,17 @@ final class OnboardingState: ObservableObject {
     @Published private(set) var screenRecordingMessage: String?
     @Published private(set) var isWorking = false
     @Published private(set) var pluginInstalled = false
+    /// True when the Claude desktop app is installed. It decides how the
+    /// Claude Code step reads a missing `claude` command: such a Mac has
+    /// Claude Code already, and only the command line tool is absent, so the
+    /// step offers to add it rather than claiming Claude Code is missing.
+    @Published private(set) var claudeAppPresent = false
+    /// What the one-press install is doing right now, shown as the step's
+    /// waiting label; nil when it is not running.
+    @Published private(set) var cliSetupStatus: String?
+    /// True while the step waits for the OS's Command Line Tools install,
+    /// which ends with no notification; the tick polls for it.
+    @Published private(set) var awaitingDeveloperTools = false
 
     /// The status board: the window's root once setup is finished, listing
     /// every link in the chain and letting a broken one be opened at the step
@@ -74,10 +85,15 @@ final class OnboardingState: ObservableObject {
     /// answer is cached, see `Permissions.probeScreenRecording`), so it runs
     /// on a gentler cadence than the free in-process ticks.
     private static let screenProbeInterval: TimeInterval = 2
+    /// The Command Line Tools probe spawns a process, so it runs on its own
+    /// gentler cadence, like the Screen Recording probe.
+    private static let developerToolsProbeInterval: TimeInterval = 3
     private var timer: Timer?
     private var captureBaseline: Date?
     private var screenProbeInFlight = false
     private var lastScreenProbe: Date = .distantPast
+    private var developerToolsProbeInFlight = false
+    private var lastDeveloperToolsProbe: Date = .distantPast
 
     static var isCompleted: Bool {
         UserDefaults.standard.bool(forKey: completedKey)
@@ -147,6 +163,9 @@ final class OnboardingState: ObservableObject {
     /// already there, so a user who installed it earlier never sees the step.
     private func detectClaude() {
         isWorking = true
+        claudeAppPresent =
+            NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: "com.anthropic.claudefordesktop") != nil
         ClaudeCLI.detectInBackground { [weak self] detection in
             guard let self else { return }
             self.isWorking = false
@@ -178,10 +197,31 @@ final class OnboardingState: ObservableObject {
             } else {
                 probeScreenRecording()
             }
+        case .claudeCode:
+            pollDeveloperTools()
         case .tryIt:
             if hasNewCapture() { advance() }
-        case .welcome, .claudeCode, .done:
+        case .welcome, .done:
             break
+        }
+    }
+
+    /// Waits out the OS's Command Line Tools install after
+    /// `installClaudeCode` requested it. The install runs in Apple's own UI
+    /// and finishes silently, so noticing it means asking again.
+    private func pollDeveloperTools() {
+        guard awaitingDeveloperTools, !developerToolsProbeInFlight,
+            Date().timeIntervalSince(lastDeveloperToolsProbe) >= Self.developerToolsProbeInterval
+        else { return }
+        developerToolsProbeInFlight = true
+        lastDeveloperToolsProbe = Date()
+        DispatchQueue.global(qos: .utility).async {
+            let present = ClaudeCLIInstaller.developerToolsPresent()
+            Task { @MainActor in
+                self.developerToolsProbeInFlight = false
+                guard present, self.awaitingDeveloperTools, self.step == .claudeCode else { return }
+                self.installCLIAndPlugin()
+            }
         }
     }
 
@@ -335,10 +375,75 @@ final class OnboardingState: ObservableObject {
         isWorking = true
         claudeMessage = nil
         claudeMessageIsError = false
+        installPlugin(with: claudePath)
+    }
+
+    /// The one-press path for a Mac with the Claude app but no `claude`
+    /// command: add the command line tool, then install the plugin, landing
+    /// in the same state the two-step path does. When git is missing the
+    /// chain starts by requesting the OS's Command Line Tools install,
+    /// because Claude Code's plugin commands shell out to git and fail
+    /// without it; the tick's poll resumes the chain once the tools land.
+    func installClaudeCode() {
+        guard claudePath == nil, !isWorking else { return }
+        isWorking = true
+        claudeMessage = nil
+        claudeMessageIsError = false
+        cliSetupStatus = "Checking this Mac's tools…"
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = ClaudeCLI.installPlugin(claudePath)
+            if ClaudeCLIInstaller.developerToolsPresent() {
+                Task { @MainActor in self.installCLIAndPlugin() }
+                return
+            }
+            ClaudeCLIInstaller.requestDeveloperTools()
+            Task { @MainActor in
+                self.awaitingDeveloperTools = true
+                self.cliSetupStatus = """
+                    macOS is asking to install Apple's command line developer tools. \
+                    Click Install in that dialog; setup continues on its own once they land.
+                    """
+            }
+        }
+    }
+
+    /// The way out of the Command Line Tools wait, for a user who dismissed
+    /// the OS dialog instead.
+    func cancelCLISetup() {
+        guard awaitingDeveloperTools else { return }
+        awaitingDeveloperTools = false
+        isWorking = false
+        cliSetupStatus = nil
+    }
+
+    private func installCLIAndPlugin() {
+        awaitingDeveloperTools = false
+        cliSetupStatus = "Adding Claude Code's command line tool…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ClaudeCLIInstaller.install()
+            Task { @MainActor in
+                switch result {
+                case .installed(let claude):
+                    self.claudePath = claude
+                    self.cliSetupStatus = "Installing the stillpane plugin…"
+                    self.installPlugin(with: claude)
+                case .failed(let message):
+                    self.isWorking = false
+                    self.cliSetupStatus = nil
+                    self.claudeMessage = message
+                    self.claudeMessageIsError = true
+                }
+            }
+        }
+    }
+
+    /// The shared tail of both install paths. Expects `isWorking` to be set
+    /// and clears it, along with the progress label, when the result lands.
+    private func installPlugin(with claude: URL) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = ClaudeCLI.installPlugin(claude)
             Task { @MainActor in
                 self.isWorking = false
+                self.cliSetupStatus = nil
                 self.pluginInstalled = result.succeeded
                 self.claudeMessage =
                     result.succeeded
@@ -347,6 +452,12 @@ final class OnboardingState: ObservableObject {
                 self.claudeMessageIsError = !result.succeeded
             }
         }
+    }
+
+    func copyCLIInstallCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(ClaudeCLIInstaller.terminalCommand, forType: .string)
+        HUD.flash("Command copied")
     }
 
     /// A failed install should not dead-end: this opens the prefilled GitHub
