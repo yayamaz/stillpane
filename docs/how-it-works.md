@@ -70,21 +70,31 @@ latest=$(find "$root" -mindepth 1 -maxdepth 1 -type d -name '20*' 2>/dev/null | 
 
 # Freshness comes from context.md, written once at capture time: claim and
 # marker writes change the directory's own timestamps and must never extend
-# the two-minute window.
+# the two-minute window. GNU stat reads `-f %m` as filesystem mode with a %m
+# file operand: the call fails yet still prints the file's status block, so
+# the fallback must replace what the first branch captured, never extend it.
+# A non-numeric mtime would abort the arithmetic mid-script; refuse it
+# explicitly instead, nonzero so the miss is visible rather than silently
+# discarding the capture.
 now=$(date +%s)
-born=$(stat -f %m "$latest/context.md" 2>/dev/null || stat -c %Y "$latest/context.md")
+born=$(stat -f %m "$latest/context.md" 2>/dev/null) \
+    || born=$(stat -c %Y "$latest/context.md")
+case "$born" in '' | *[!0-9]*) exit 1 ;; esac
 [ $((now - born)) -le 120 ] || exit 0
 
 # Atomic claim: two prompts arriving together would both pass the .delivered
-# check above, and mkdir succeeds for exactly one of them. The loser exits
-# silently. HUP/INT/TERM exit through the EXIT trap, which releases only an
-# empty claim directory. Deliberately no stale-claim reaping: reaping on a
-# timer could duplicate a merely slow emitter, so an untrappable kill during
-# the tiny emission window forfeits auto-delivery for that one capture
-# instead - /stillpane still attaches it.
+# check above, and the O_EXCL create succeeds for exactly one of them. The
+# noclobber redirect keeps the exclusive open inside bash itself: an external
+# mkdir can be a non-atomic reimplementation (uutils coreutils races its
+# existence check against concurrent callers). The loser exits silently.
+# HUP/INT/TERM exit through the EXIT trap, which releases the claim.
+# Deliberately no stale-claim reaping: reaping on a timer could duplicate a
+# merely slow emitter, so an untrappable kill during the tiny emission window
+# forfeits auto-delivery for that one capture instead - /stillpane still
+# attaches it.
 claim="$latest/.delivering"
-mkdir "$claim" 2>/dev/null || exit 0
-trap 'rmdir "$claim" 2>/dev/null || true' EXIT
+(set -C; : > "$claim") 2>/dev/null || exit 0
+trap 'rm -f "$claim" 2>/dev/null || true' EXIT
 # Nonzero, so a signal landing mid-emit discards the partial block - Claude
 # Code only injects a hook's stdout on exit 0 - and the capture stays
 # retryable because the delivered marker was never written.

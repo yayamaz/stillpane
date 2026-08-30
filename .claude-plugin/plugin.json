@@ -1,6 +1,6 @@
 {
   "name": "stillpane",
   "description": "Auto-attach stillpane window captures (screenshot plus full text) to your next Claude Code message",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": { "name": "Yanis Saheb" }
 }

@@ -3,8 +3,9 @@
 # Run from anywhere: bash Tests/HookTests.sh
 #
 # Every test runs against an isolated temporary HOME, so real captures are
-# never read or touched. macOS-only, like the product: BSD touch/stat are
-# assumed. The one environmental dependency is the hook's
+# never read or touched. Runs under BSD and GNU userlands alike, because the
+# hook itself must: the plugin installs on any machine running Claude Code,
+# app or no app. The one environmental dependency is the hook's
 # /Applications/stillpane.app check: the install-offer branch runs where the
 # app is absent (CI), and the app-installed branch runs where it is present
 # (a development machine), so each environment exercises its reachable side.
@@ -32,6 +33,11 @@ assert_eq() { # name expected actual
         fail "$1"
         printf '     expected: %s\n     actual:   %s\n' "$2" "$3"
     fi
+}
+
+mode() { # octal permissions, BSD stat first, GNU fallback
+    m=$(stat -f %Lp "$1" 2>/dev/null) || m=$(stat -c %a "$1")
+    printf '%s\n' "$m"
 }
 
 cleanup_dirs=()
@@ -96,10 +102,9 @@ else
         *stillpane-install*) pass "install offer is emitted once" ;;
         *) fail "install offer is emitted once" ;;
     esac
-    assert_eq "install offer creates a private root" \
-        "700" "$(stat -f %Lp "$root" 2>/dev/null || stat -c %a "$root")"
+    assert_eq "install offer creates a private root" "700" "$(mode "$root")"
     assert_eq "install marker is owner-only" \
-        "600" "$(stat -f %Lp "$root/.install-offered" 2>/dev/null || stat -c %a "$root/.install-offered")"
+        "600" "$(mode "$root/.install-offered")"
     out=$(run_hook)
     assert_eq "install offer never repeats" "" "$out"
 fi
@@ -109,7 +114,7 @@ fi
 new_home
 make_root
 make_capture
-touch -A -000300 "$dir/context.md"
+touch -t 202001010000 "$dir/context.md"
 out=$(run_hook)
 assert_eq "stale capture is silent" "" "$out"
 assert_true "stale capture is not marked delivered" test ! -e "$dir/.delivered"
@@ -125,8 +130,7 @@ case "$out" in
     *) fail "fresh capture emits with {{DIR}} expanded" ;;
 esac
 assert_true "delivery is marked" test -e "$dir/.delivered"
-assert_eq "delivered marker is owner-only" \
-    "600" "$(stat -f %Lp "$dir/.delivered" 2>/dev/null || stat -c %a "$dir/.delivered")"
+assert_eq "delivered marker is owner-only" "600" "$(mode "$dir/.delivered")"
 assert_true "claim is released after delivery" test ! -e "$dir/.delivering"
 out=$(run_hook)
 assert_eq "second prompt attaches nothing" "" "$out"
@@ -171,9 +175,9 @@ assert_true "the next prompt retries a failed emit" test -n "$out"
 new_home
 make_root
 make_capture
-touch -A -000300 "$dir/context.md"
-mkdir "$dir/.delivering"
-rmdir "$dir/.delivering"
+touch -t 202001010000 "$dir/context.md"
+touch "$dir/.delivering"
+rm "$dir/.delivering"
 touch "$dir"
 out=$(run_hook)
 assert_eq "marker and directory activity cannot refresh a stale capture" "" "$out"
@@ -201,8 +205,7 @@ make_root
 make_capture
 chmod 755 "$root"
 run_hook > /dev/null
-assert_eq "the hook never re-permissions the root" \
-    "755" "$(stat -f %Lp "$root" 2>/dev/null || stat -c %a "$root")"
+assert_eq "the hook never re-permissions the root" "755" "$(mode "$root")"
 
 # --- allow-read approves only exact in-root reads ----------------------------
 
@@ -210,16 +213,24 @@ new_home
 make_root
 make_capture
 in_root="$dir/context.md"
-out=$(printf '{"tool_input":{"file_path":"%s"}}' "$in_root" | bash "$allow")
-case "$out" in
-    *'"permissionDecision":"allow"'*) pass "in-root read is approved" ;;
-    *) fail "in-root read is approved" ;;
-esac
-out=$(printf '{"tool_input":{"file_path": "%s"}}' "$in_root" | bash "$allow")
-case "$out" in
-    *'"permissionDecision":"allow"'*) pass "spaced JSON variant is approved" ;;
-    *) fail "spaced JSON variant is approved" ;;
-esac
+# The approve path parses JSON with plutil; where plutil is absent the hook
+# falls through to the normal permission prompt, so only the refusal side is
+# assertable there.
+if [ -x /usr/bin/plutil ]; then
+    out=$(printf '{"tool_input":{"file_path":"%s"}}' "$in_root" | bash "$allow")
+    case "$out" in
+        *'"permissionDecision":"allow"'*) pass "in-root read is approved" ;;
+        *) fail "in-root read is approved" ;;
+    esac
+    out=$(printf '{"tool_input":{"file_path": "%s"}}' "$in_root" | bash "$allow")
+    case "$out" in
+        *'"permissionDecision":"allow"'*) pass "spaced JSON variant is approved" ;;
+        *) fail "spaced JSON variant is approved" ;;
+    esac
+else
+    out=$(printf '{"tool_input":{"file_path":"%s"}}' "$in_root" | bash "$allow")
+    assert_eq "in-root read falls through where plutil is absent" "" "$out"
+fi
 out=$(printf '{"tool_input":{"file_path":"%s"}}' "$HOME/.ssh/id_ed25519" | bash "$allow")
 assert_eq "outside-root read is not approved" "" "$out"
 out=$(printf '{"tool_input":{"file_path":"%s"}}' "$root/x/../../.ssh/id_ed25519" | bash "$allow")
@@ -242,6 +253,56 @@ ln -s "$(dirname "$secret")" "$root/20990101-000001-linkdir"
 out=$(printf '{"tool_input":{"file_path":"%s"}}' \
     "$root/20990101-000001-linkdir/$(basename "$secret")" | bash "$allow")
 assert_eq "file inside a symlinked capture dir is not approved" "" "$out"
+
+# --- freshness survives GNU stat semantics ------------------------------------
+
+# GNU coreutils reads `stat -f %m FILE` as filesystem mode with %m as a file
+# operand: the call exits nonzero yet still prints FILE's status block to
+# stdout. The BSD-first fallback must replace that captured output, never
+# extend it. A PATH shim reproduces GNU behavior on either userland.
+new_home
+make_root
+make_capture
+shimdir=$(mktemp -d "${TMPDIR:-/tmp}/stillpane-hooktest-shim.XXXXXX")
+cleanup_dirs+=("$shimdir")
+cat > "$shimdir/stat" <<'SHIM'
+#!/bin/bash
+case "$1" in
+-f) printf '  File: "/shim"\n    ID: 0 Namelen: 255    Type: ext2/ext3\n'
+    echo "stat: cannot read file system information for '%m'" >&2
+    exit 1 ;;
+-c) [ "$2" = "%Y" ] || exit 1
+    date +%s ;;
+*) exit 1 ;;
+esac
+SHIM
+chmod +x "$shimdir/stat"
+out=$(CLAUDE_CODE_ENTRYPOINT=cli PATH="$shimdir:$PATH" bash "$hook" 2>/dev/null)
+rc=$?
+case "$out" in
+    *"Screenshot: $dir/shot.png"*) pass "GNU stat semantics still deliver a fresh capture" ;;
+    *) fail "GNU stat semantics still deliver a fresh capture" ;;
+esac
+assert_eq "GNU stat delivery exits 0" "0" "$rc"
+assert_true "GNU stat delivery is marked" test -e "$dir/.delivered"
+
+# --- an unparseable mtime never reaches the arithmetic ------------------------
+
+# A stat flavor that exits 0 with non-numeric output must end the hook
+# nonzero and quiet: arithmetic on junk would abort mid-script with the
+# capture unclaimed, and exit 0 would silently discard it forever.
+new_home
+make_root
+make_capture
+cat > "$shimdir/stat" <<'SHIM'
+#!/bin/bash
+printf 'not an epoch\n'
+SHIM
+out=$(CLAUDE_CODE_ENTRYPOINT=cli PATH="$shimdir:$PATH" bash "$hook" 2>/dev/null)
+rc=$?
+assert_eq "non-numeric mtime outputs nothing" "" "$out"
+assert_true "non-numeric mtime exits nonzero" test "$rc" -ne 0
+assert_true "non-numeric mtime does not mark delivery" test ! -e "$dir/.delivered"
 
 # --- the documented hooks are byte-identical to the shipped hooks -------------
 
