@@ -1,9 +1,9 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/wordmark.svg">
-  <img alt="stillpane" src="assets/wordmark-on-light.svg" width="320">
+  <img alt="stillpane - screenshot and window text for Claude Code" src="assets/wordmark-on-light.svg" width="320">
 </picture>
 
-The fastest way to give Claude Code context.
+stillpane is the fastest way to give Claude Code context.
 
 ---
 
@@ -24,7 +24,7 @@ No pasting, no copying, no describing your screen.
 <img alt="Both Option keys are pressed while an SEO guide is open; the window flies to a thumbnail under the menu bar, and the next Claude Code message reads back what was on screen." src="assets/demo.gif" width="900">
 
 
-## Why
+## Claude Code has no Appshots
 
 OpenAI's Codex app has Appshots.
 Anthropic marked the equivalent feature request "not planned" (anthropics/claude-code#68498).
