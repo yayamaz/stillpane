@@ -104,7 +104,10 @@ That is macOS policy for every app with Screen Recording permission, not a sign 
    "Swap Capture Modes" in the menu makes text-only the default, and Shift then gets you the screenshot back.
    The menu always spells out which gesture takes which, so there is no rule to remember.
 2. The capture is written to `~/.claude/stillpane/`.
-3. A hook, shipped as a Claude Code plugin, attaches it to your next message if it is under two minutes old.
+3. Two hooks, shipped as a Claude Code plugin, do the attaching.
+   A UserPromptSubmit hook attaches the capture to your next message if it is under two minutes old; it reads only `~/.claude/stillpane/` and never your prompt.
+   A PreToolUse hook approves Read calls inside that folder so the capture opens without a permission prompt; it stays silent for every other path.
+   Without a fresh capture both exit at once; the one exception is a single note, on a Mac where the app is not installed, that captures need the app.
    Older captures attach on demand with `/stillpane`.
 
    Same behavior in the CLI, the desktop app, and the IDE extensions.
@@ -153,6 +156,9 @@ It carries nothing about you or your captures, and the app never updates itself 
 The one thing setup can download is Claude Code's command line tool: only on a Mac that has none, only when you press Install Plugin, and only after the download matches Anthropic's published checksum.
 
 The Claude Code plugin updates only when you run `claude plugin update stillpane@stillpane` yourself; each plugin release is pinned to an exact commit, and Check Setup tells you when your installed plugin is older than the app expects.
+The plugin itself makes no network calls; the one exception is the stillpane-install skill, which downloads the app from GitHub releases only after you confirm.
+
+The full privacy policy is at https://stillpane.dev/privacy.
 
 ## Limits
 
