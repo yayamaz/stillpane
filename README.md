@@ -3,7 +3,7 @@
   <img alt="stillpane - screenshot and window text for Claude Code" src="assets/wordmark-on-light.svg" width="320">
 </picture>
 
-stillpane is the fastest way to give Claude Code context.
+Capture any window as markdown+screenshot for Claude Code.
 
 ---
 
