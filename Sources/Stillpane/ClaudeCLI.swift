@@ -33,13 +33,17 @@ enum ClaudeCLI {
         let standardOutput: String
         let standardError: String
 
-        /// One line fit for showing a user. Diagnostics land on stderr, so
-        /// prefer it and fall back to stdout.
+        /// One line fit for showing a user.
         var failureMessage: String {
-            let error = lastLine(standardError)
-            if !error.isEmpty { return error }
-            let output = lastLine(standardOutput)
-            return output.isEmpty ? "no output" : output
+            CommandFailure.summary(standardError: standardError, standardOutput: standardOutput)
+        }
+
+        /// Both streams, for a report body. Sized so the transcript fits the
+        /// issue URL beside the setup report.
+        var transcript: String {
+            CommandFailure.transcript(
+                standardError: standardError, standardOutput: standardOutput, limit: 3000
+            )
         }
     }
 
@@ -80,6 +84,13 @@ enum ClaudeCLI {
 
     /// The installed plugin's version, or nil when it is not installed or the
     /// listing cannot be read.
+    /// The CLI's own version line, or nil when it cannot answer.
+    static func version(_ claude: URL) -> String? {
+        let result = run(claude, ["--version"])
+        let line = lastLine(result.standardOutput)
+        return result.succeeded && !line.isEmpty ? line : nil
+    }
+
     static func installedPluginVersion(_ claude: URL) -> String? {
         let result = run(claude, ["plugin", "list", "--json"])
         guard result.succeeded,
@@ -192,6 +203,13 @@ enum ClaudeCLI {
     /// with "env: node: No such file or directory" under the bundle's minimal
     /// PATH. Put the binary's own directory first, since a version manager
     /// keeps node beside it.
+    ///
+    /// The marketplace is a public repository, and Claude Code clones an
+    /// `owner/repo` source over SSH when it can, falling back to HTTPS - or
+    /// the other way round - and reporting whichever attempt came last. A
+    /// Finder-launched app has no ssh-agent and no key, so SSH can only fail
+    /// here, and its failure would replace the HTTPS error a user needs to
+    /// see. HTTPS only, then.
     private static func environment(for executable: URL) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         let inherited = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
@@ -201,6 +219,7 @@ enum ClaudeCLI {
             "/usr/local/bin",
         ]
         environment["PATH"] = (prefixes + [inherited]).joined(separator: ":")
+        environment["CLAUDE_CODE_PLUGIN_PREFER_HTTPS"] = "1"
         if environment["CLAUDE_CONFIG_DIR"] == nil, let configDir = configDirOverride {
             environment["CLAUDE_CONFIG_DIR"] = configDir
         }

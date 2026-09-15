@@ -65,8 +65,9 @@ enum SetupReport {
             let claudeItem: SetupItem
             let pluginItem: SetupItem
             if let claude {
+                let version = ClaudeCLI.version(claude).map { " (\($0))" } ?? ""
                 claudeItem = SetupItem(
-                    name: "claude command", detail: claude.path, health: .ok, step: .claudeCode
+                    name: "claude command", detail: claude.path + version, health: .ok, step: .claudeCode
                 )
                 // The app never updates the plugin; when the install is older
                 // than the version this app shipped with, the row hands the
@@ -109,13 +110,17 @@ enum SetupReport {
 
     /// Opens a GitHub issue form with the report already in the body, so
     /// every report arrives debuggable. `detail` carries whatever error
-    /// message prompted the report.
-    static func openIssue(report: String, detail: String? = nil) {
+    /// message prompted the report, `transcript` the failed command's output
+    /// behind it.
+    static func openIssue(report: String, detail: String? = nil, transcript: String? = nil) {
         var body = "<describe the problem here>\n"
         if let detail {
             body += "\nWhat failed: \(detail)\n"
         }
         body += "\n---\n\(report)"
+        if let transcript {
+            body += "\n\n```\n\(transcript)\n```"
+        }
         guard
             let url = SupportLink.newIssueURL(
                 repoSlug: ClaudeCLI.repoSlug, title: "", body: body

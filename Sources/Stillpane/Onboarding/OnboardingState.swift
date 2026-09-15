@@ -37,6 +37,10 @@ final class OnboardingState: ObservableObject {
     /// True when `claudeMessage` reports a failure, so the step can offer a
     /// way to report it instead of dead-ending.
     @Published private(set) var claudeMessageIsError = false
+
+    /// The failed plugin install's full output, carried into the issue
+    /// report: the one line on screen is a verdict, not a diagnosis.
+    private var claudeFailureTranscript: String?
     @Published private(set) var accessibilityMessage: String?
     @Published private(set) var screenRecordingMessage: String?
     @Published private(set) var isWorking = false
@@ -380,6 +384,7 @@ final class OnboardingState: ObservableObject {
         isWorking = true
         claudeMessage = nil
         claudeMessageIsError = false
+        claudeFailureTranscript = nil
         installPlugin(with: claudePath)
     }
 
@@ -394,6 +399,7 @@ final class OnboardingState: ObservableObject {
         isWorking = true
         claudeMessage = nil
         claudeMessageIsError = false
+        claudeFailureTranscript = nil
         cliSetupStatus = "Checking this Mac's tools…"
         DispatchQueue.global(qos: .userInitiated).async {
             if ClaudeCLIInstaller.developerToolsPresent() {
@@ -482,6 +488,7 @@ final class OnboardingState: ObservableObject {
                     ? "Plugin installed."
                     : "Install did not complete: \(result.failureMessage)"
                 self.claudeMessageIsError = !result.succeeded
+                self.claudeFailureTranscript = result.succeeded ? nil : result.transcript
             }
         }
     }
@@ -498,7 +505,9 @@ final class OnboardingState: ObservableObject {
         SetupReport.gather(
             accessibilityStatus: Permissions.accessibilityGranted ? "granted" : "missing"
         ) { [weak self] report in
-            SetupReport.openIssue(report: report, detail: self?.claudeMessage)
+            SetupReport.openIssue(
+                report: report, detail: self?.claudeMessage, transcript: self?.claudeFailureTranscript
+            )
         }
     }
 
