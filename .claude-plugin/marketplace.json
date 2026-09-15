@@ -8,7 +8,7 @@
       "source": {
         "source": "github",
         "repo": "yayamaz/stillpane",
-        "sha": "c48062d0b0c2ee47f814cae36099dff19b80f78b"
+        "sha": "af4e6037508fe55e9426afc5608d82a528689058"
       },
       "description": "Attaches stillpane window captures (screenshot plus full text) to your next Claude Code message. Two hooks, both scoped to ~/.claude/stillpane: a UserPromptSubmit hook that attaches a capture under two minutes old and never reads your prompt, and a PreToolUse hook that pre-approves Read calls inside that folder only. Two skills: /stillpane attaches an older capture; stillpane-install downloads the macOS menu bar app from GitHub releases after you confirm. The plugin makes no other network calls. Requires the stillpane app, macOS 14 or later.",
       "homepage": "https://stillpane.dev",
